@@ -594,6 +594,17 @@ void create_logical_device(application* app) {
   if (result != VK_SUCCESS) {
     throw std::runtime_error("failed to create logical device!");
   }
+
+  //
+  // Lastly, capture our graphics queue.
+  //
+
+  vkGetDeviceQueue(
+    app->device,
+    indices.graphics_family.value(),
+    0,
+    &(app->graphics_queue)
+  );
 }
 
 void application_main_loop(application* app) {

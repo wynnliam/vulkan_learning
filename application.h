@@ -42,6 +42,9 @@ struct application {
   VkPhysicalDevice physical_device;
   // The logical device that interfaces with our actual physical device.
   VkDevice device;
+  // The command queue to process any commands we want to send to
+  // the GPU.
+  VkQueue graphics_queue;
 };
 
 //
