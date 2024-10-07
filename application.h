@@ -40,6 +40,8 @@ struct application {
   // have multiple devices used simultaneously, but we will only
   // deal with one.
   VkPhysicalDevice physical_device;
+  // The logical device that interfaces with our actual physical device.
+  VkDevice device;
 };
 
 //
