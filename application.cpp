@@ -206,6 +206,7 @@ void init_vulkan(application* app) {
   create_vulkan_instance(app);
   setup_debug_messenger(app);
   pick_physical_device(app);
+  create_logical_device(app);
 }
 
 bool check_validation_layer_support() {
@@ -525,6 +526,76 @@ queue_family_indices find_queue_families(VkPhysicalDevice device) {
   return indices;
 }
 
+void create_logical_device(application* app) {
+  queue_family_indices indices;
+  VkDeviceQueueCreateInfo queue_create_info;
+  float queue_priority;
+  VkPhysicalDeviceFeatures device_features;
+  VkDeviceCreateInfo device_create_info;
+  VkResult result;
+
+  //
+  // First, set up the queue_create_info. This is used to
+  // create what I think is the Vulkan equivalent of the
+  // command queue. In our case, we just want one that supports
+  // graphics commands.
+  //
+
+  indices = find_queue_families(app->physical_device);
+  // We must give a priority value to the queue even if we only
+  // have one. So in our case, we give it the largest priority
+  // possible.
+  queue_priority = 1.0f;
+
+  queue_create_info = {};
+  queue_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+  // We know this will work because if we got to this point that means
+  // we know from choosing the physical device we found a physical
+  // device to suit our needs.
+  queue_create_info.queueFamilyIndex = indices.graphics_family.value();
+  // Vulkan will already limit the # of queues for each queue family
+  // and you really don't need more than one anyways. You can create
+  // your command buffers on multiple threads and then submit them
+  // all at once on the main thread in a single, low-overhead call.
+  queue_create_info.queueCount = 1;
+  queue_create_info.pQueuePriorities = &queue_priority;
+
+  //
+  // Now we can create our actual device.
+  //
+
+  // For the time being, the features we will need don't need to be
+  // anything special. So we just initialize this to empty.
+  device_features = {};
+
+  device_create_info = {};
+  device_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+  device_create_info.pQueueCreateInfos = &queue_create_info;
+  device_create_info.queueCreateInfoCount = 1;
+  device_create_info.pEnabledFeatures = &device_features;
+  device_create_info.enabledExtensionCount = 0;
+
+  // Just like with the VkInstanceCreateInfo, we need to enable validation
+  // layers for the device.
+  if (enable_validation_layers) {
+    device_create_info.enabledLayerCount = (uint32_t)validation_layers.size();
+    device_create_info.ppEnabledLayerNames = validation_layers.data();
+  } else {
+    device_create_info.enabledLayerCount = 0;
+  }
+
+  result = vkCreateDevice(
+    app->physical_device,
+    &device_create_info,
+    NULL,
+    &(app->device)
+  );
+
+  if (result != VK_SUCCESS) {
+    throw std::runtime_error("failed to create logical device!");
+  }
+}
+
 void application_main_loop(application* app) {
   while (!glfwWindowShouldClose(app->window)) {
     glfwPollEvents();
@@ -532,6 +603,8 @@ void application_main_loop(application* app) {
 }
 
 void application_cleanup(application* app) {
+  vkDestroyDevice(app->device, NULL);
+
   if (enable_validation_layers) {
     destroy_debug_utils_messenger(
       app->vulkan_instance,

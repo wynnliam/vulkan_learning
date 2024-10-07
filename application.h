@@ -56,6 +56,7 @@ void init_vulkan(application* app);
 void create_vulkan_instance(application* app);
 void setup_debug_messenger(application* app);
 void pick_physical_device(application* app);
+void create_logical_device(application* app);
 
 void application_main_loop(application* app);
 
