@@ -8,7 +8,7 @@
   to sort of "buck" the tutorials so I have to think
   about how the pieces fit together more.
 
-  // TODO: Current chapter: https://vulkan-tutorial.com/Drawing_a_triangle/Presentation/Window_surface
+  // TODO: Current chapter: https://vulkan-tutorial.com/en/Drawing_a_triangle/Presentation/Swap_chain
 */
 
 #include "application.h"

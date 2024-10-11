@@ -22,6 +22,10 @@ struct queue_family_indices {
   // So the implication is that the order of the list is always the
   // same.
   std::optional<uint32_t> graphics_family;
+  // Although Vulkan itself supports window system integration,
+  // the individual device may not. Thus, for a device to be viable,
+  // we need to know that it supports it.
+  std::optional<uint32_t> present_family;
 };
 
 struct application {
@@ -33,6 +37,13 @@ struct application {
   // It basically describes what features of the Vulkan API
   // your application uses.
   VkInstance vulkan_instance;
+  // Vulkan is platform agnostic. We thus need to use the Window
+  // System Integration (WSI) extension to interface Vulkan with
+  // our windowing system. The extension exposes the VkSurfaceKHR
+  // which is an abstract surface to present images to. Note that
+  // the tutorial shows how you'd create a Windows specific surface.
+  // In our case we will rely on GLFW to do it.
+  VkSurfaceKHR surface;
   // Handle for debug callbacks, used to pass debug messages
   // to provided debug callbacks.
   VkDebugUtilsMessengerEXT debug_messenger;
@@ -45,6 +56,8 @@ struct application {
   // The command queue to process any commands we want to send to
   // the GPU.
   VkQueue graphics_queue;
+  // A command queue for presenting images to the surface.
+  VkQueue present_queue;
 };
 
 //
@@ -58,6 +71,7 @@ void init_window(application* app);
 void init_vulkan(application* app);
 void create_vulkan_instance(application* app);
 void setup_debug_messenger(application* app);
+void create_surface(application* app);
 void pick_physical_device(application* app);
 void create_logical_device(application* app);
 

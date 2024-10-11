@@ -6,6 +6,7 @@
 #include <cstring>
 #include <algorithm>
 #include <iterator>
+#include <set>
 
 using namespace std;
 
@@ -163,9 +164,12 @@ void populate_debug_messenger_create_info(
 );
 // Returns true if a given physical device is suitable for our
 // application.
-bool is_device_suitable(VkPhysicalDevice device);
+bool is_device_suitable(VkPhysicalDevice device, VkSurfaceKHR surface);
 // Returns the queue types a given device supports.
-queue_family_indices find_queue_families(VkPhysicalDevice device);
+queue_family_indices find_queue_families(
+  VkPhysicalDevice device,
+  VkSurfaceKHR surface
+);
 
 application::application() {
   window = NULL;
@@ -205,6 +209,7 @@ void init_vulkan(application* app) {
 
   create_vulkan_instance(app);
   setup_debug_messenger(app);
+  create_surface(app);
   pick_physical_device(app);
   create_logical_device(app);
 }
@@ -433,6 +438,89 @@ void setup_debug_messenger(application* app) {
   }
 }
 
+void create_surface(application* app) {
+  VkResult result;
+
+  result = glfwCreateWindowSurface(
+    app->vulkan_instance,
+    app->window,
+    NULL,
+    &(app->surface)
+  );
+
+  if (result != VK_SUCCESS) {
+    throw runtime_error("failed to create window surface!");
+  }
+}
+
+bool is_device_suitable(VkPhysicalDevice device, VkSurfaceKHR surface) {
+  queue_family_indices indices;
+
+  indices = find_queue_families(device, surface);
+
+  return is_complete(indices);
+}
+
+queue_family_indices find_queue_families(
+  VkPhysicalDevice device,
+  VkSurfaceKHR surface
+) {
+  queue_family_indices indices;
+  uint32_t num_queue_families;
+  vector<VkQueueFamilyProperties> queue_families;
+  uint32_t i;
+  VkBool32 present_support;
+
+  //
+  // First query the queue families supported by the device.
+  //
+
+  vkGetPhysicalDeviceQueueFamilyProperties(device, &num_queue_families, NULL);
+
+  queue_families.resize(num_queue_families);
+  vkGetPhysicalDeviceQueueFamilyProperties(
+    device,
+    &num_queue_families,
+    queue_families.data()
+  );
+
+  //
+  // Next, scan the list of queue families to find one that has
+  // the VK_QUEUE_GRAPHICS_BIT set. Basically, this says the given
+  // device can do graphics operations.
+  //
+  // In addition, we want to check that the device supports presenting
+  // an image to a surface.
+  //
+
+  i = 0;
+  for (const VkQueueFamilyProperties next_queue_family : queue_families) {
+    if (next_queue_family.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+      indices.graphics_family = i;
+    }
+
+    present_support = false;
+    vkGetPhysicalDeviceSurfaceSupportKHR(
+      device,
+      i,
+      surface,
+      &present_support
+    );
+
+    if (present_support) {
+      indices.present_family = i;
+    }
+
+    if (is_complete(indices)) {
+      break;
+    }
+
+    i++;
+  }
+
+  return indices;
+}
+
 void pick_physical_device(application* app) {
   uint32_t device_count;
   vector<VkPhysicalDevice> devices;
@@ -465,7 +553,7 @@ void pick_physical_device(application* app) {
   //
 
   for (const VkPhysicalDevice& device : devices) {
-    if (is_device_suitable(device)) {
+    if (is_device_suitable(device, app->surface)) {
       app->physical_device = device;
       break;
     }
@@ -477,58 +565,11 @@ void pick_physical_device(application* app) {
   }
 }
 
-bool is_device_suitable(VkPhysicalDevice device) {
-  queue_family_indices indices;
-
-  indices = find_queue_families(device);
-
-  return is_complete(indices);
-}
-
-queue_family_indices find_queue_families(VkPhysicalDevice device) {
-  queue_family_indices indices;
-  uint32_t num_queue_families;
-  vector<VkQueueFamilyProperties> queue_families;
-  uint32_t i;
-
-  //
-  // First query the queue families supported by the device.
-  //
-
-  vkGetPhysicalDeviceQueueFamilyProperties(device, &num_queue_families, NULL);
-
-  queue_families.resize(num_queue_families);
-  vkGetPhysicalDeviceQueueFamilyProperties(
-    device,
-    &num_queue_families,
-    queue_families.data()
-  );
-
-  //
-  // Next, scan the list of queue families to find one that has
-  // the VK_QUEUE_GRAPHICS_BIT set. Basically, this says the given
-  // device can do graphics operations.
-  //
-
-  i = 0;
-  for (const VkQueueFamilyProperties next_queue_family : queue_families) {
-    if (next_queue_family.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
-      indices.graphics_family = i;
-    }
-
-    if (is_complete(indices)) {
-      break;
-    }
-
-    i++;
-  }
-
-  return indices;
-}
-
 void create_logical_device(application* app) {
   queue_family_indices indices;
+  vector<VkDeviceQueueCreateInfo> queue_create_infos;
   VkDeviceQueueCreateInfo queue_create_info;
+  set<uint32_t> unique_queue_familes;
   float queue_priority;
   VkPhysicalDeviceFeatures device_features;
   VkDeviceCreateInfo device_create_info;
@@ -541,24 +582,37 @@ void create_logical_device(application* app) {
   // graphics commands.
   //
 
-  indices = find_queue_families(app->physical_device);
+  indices = find_queue_families(
+    app->physical_device,
+    app->surface
+  );
+
+  unique_queue_familes = {
+    indices.graphics_family.value(),
+    indices.present_family.value()
+  };
+
   // We must give a priority value to the queue even if we only
   // have one. So in our case, we give it the largest priority
   // possible.
   queue_priority = 1.0f;
 
-  queue_create_info = {};
-  queue_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-  // We know this will work because if we got to this point that means
-  // we know from choosing the physical device we found a physical
-  // device to suit our needs.
-  queue_create_info.queueFamilyIndex = indices.graphics_family.value();
-  // Vulkan will already limit the # of queues for each queue family
-  // and you really don't need more than one anyways. You can create
-  // your command buffers on multiple threads and then submit them
-  // all at once on the main thread in a single, low-overhead call.
-  queue_create_info.queueCount = 1;
-  queue_create_info.pQueuePriorities = &queue_priority;
+  for (uint32_t queue_family : unique_queue_familes) {
+    queue_create_info = {};
+    queue_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+    // We know this will work because if we got to this point that means
+    // we know from choosing the physical device we found a physical
+    // device to suit our needs.
+    queue_create_info.queueFamilyIndex = indices.graphics_family.value();
+    // Vulkan will already limit the # of queues for each queue family
+    // and you really don't need more than one anyways. You can create
+    // your command buffers on multiple threads and then submit them
+    // all at once on the main thread in a single, low-overhead call.
+    queue_create_info.queueCount = 1;
+    queue_create_info.pQueuePriorities = &queue_priority;
+
+    queue_create_infos.push_back(queue_create_info);
+  }
 
   //
   // Now we can create our actual device.
@@ -570,8 +624,8 @@ void create_logical_device(application* app) {
 
   device_create_info = {};
   device_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-  device_create_info.pQueueCreateInfos = &queue_create_info;
-  device_create_info.queueCreateInfoCount = 1;
+  device_create_info.pQueueCreateInfos = queue_create_infos.data();
+  device_create_info.queueCreateInfoCount = (uint32_t)queue_create_infos.size();
   device_create_info.pEnabledFeatures = &device_features;
   device_create_info.enabledExtensionCount = 0;
 
@@ -596,7 +650,7 @@ void create_logical_device(application* app) {
   }
 
   //
-  // Lastly, capture our graphics queue.
+  // Lastly, capture our graphics queue and present queue.
   //
 
   vkGetDeviceQueue(
@@ -604,6 +658,13 @@ void create_logical_device(application* app) {
     indices.graphics_family.value(),
     0,
     &(app->graphics_queue)
+  );
+
+  vkGetDeviceQueue(
+    app->device,
+    indices.present_family.value(),
+    0,
+    &(app->present_queue)
   );
 }
 
@@ -624,6 +685,7 @@ void application_cleanup(application* app) {
     );
   }
 
+  vkDestroySurfaceKHR(app->vulkan_instance, app->surface, NULL);
   vkDestroyInstance(app->vulkan_instance, NULL);
 
   glfwDestroyWindow(app->window);
@@ -635,5 +697,6 @@ void application_cleanup(application* app) {
 //
 
 bool is_complete(const queue_family_indices& queue_fam) {
-  return queue_fam.graphics_family.has_value();
+  return queue_fam.graphics_family.has_value() &&
+         queue_fam.present_family.has_value();
 }
